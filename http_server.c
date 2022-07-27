@@ -1,7 +1,9 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
+#include <linux/fs.h>
 #include <linux/kthread.h>
 #include <linux/sched/signal.h>
+#include <linux/string.h>
 #include <linux/tcp.h>
 
 #include "http_parser.h"
@@ -29,13 +31,22 @@
     "HTTP/1.1 501 Not Implemented" CRLF "Server: " KBUILD_MODNAME CRLF \
     "Content-Type: text/plain" CRLF "Content-Length: 21" CRLF          \
     "Connection: KeepAlive" CRLF CRLF "501 Not Implemented" CRLF
-
+#define HTTP_RESPONSE_200_KEEPALIVE_D                     \
+    ""                                                    \
+    "HTTP/1.1 200 OK" CRLF "Server: " KBUILD_MODNAME CRLF \
+    "Content-Type: text/html" CRLF "Connection: Keep-Alive" CRLF CRLF
+#define HTTP_RESPONSE_200_KEEPALIVE_DUMM                  \
+    ""                                                    \
+    "HTTP/1.1 200 OK" CRLF "Server: " KBUILD_MODNAME CRLF \
+    "Connection: Keep-Alive" CRLF CRLF
 #define RECV_BUFFER_SIZE 4096
+#define SEND_BUFFER_SIZE 1024
 
 struct http_request {
     struct socket *socket;
     enum http_method method;
     char request_url[128];
+    struct dir_context dir_context;
     int complete;
 };
 struct http_service daemon = {.is_stopped = false};
@@ -75,17 +86,81 @@ static int http_server_send(struct socket *sock, const char *buf, size_t size)
     return done;
 }
 
+static int tracedir(struct dir_context *dir_context,
+                    const char *name,
+                    int namelen,
+                    loff_t offset,
+                    u64 ino,
+                    unsigned int d_type)
+{
+    if (strcmp(name, ".") && strcmp(name, "..")) {
+        char msg[256];
+        struct http_request *request =
+            container_of(dir_context, struct http_request, dir_context);
+        snprintf(msg, 256, "<li><a href=\"%s\">%s</a></li>\r\n", name, name);
+        http_server_send(request->socket, msg, strlen(msg));
+    }
+    return 0;
+}
+
+static bool handle_directory(struct http_request *request)
+{
+    struct file *fp;
+    request->dir_context.actor = tracedir;
+
+    fp = filp_open("/home/qwe661234/jservHW/NetWork/khttpd/resources/",
+                   O_RDONLY | O_DIRECTORY, 0);
+
+    if (IS_ERR(fp)) {
+        pr_info("Open file failed");
+        return false;
+    }
+
+    iterate_dir(fp, &request->dir_context);
+    filp_close(fp, NULL);
+    return true;
+}
+
 static int http_server_response(struct http_request *request, int keep_alive)
 {
     char *response;
-
+    char msg[1024],
+        root[1024] = "/home/qwe661234/jservHW/NetWork/khttpd/resources";
+    struct file *fp;
+    int len;
     pr_info("requested_url = %s\n", request->request_url);
     if (request->method != HTTP_GET)
         response = keep_alive ? HTTP_RESPONSE_501_KEEPALIVE : HTTP_RESPONSE_501;
-    else
-        response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_DUMMY
-                              : HTTP_RESPONSE_200_DUMMY;
-    http_server_send(request->socket, response, strlen(response));
+    else {
+        if (strcmp(request->request_url, "/") == 0 ||
+            strcmp(request->request_url, "/index.html") == 0) {
+            response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_D
+                                  : HTTP_RESPONSE_200_DUMMY;
+            http_server_send(request->socket, response, strlen(response));
+            snprintf(
+                msg, 1024, "%s%s",
+                "<html><head><title>Web File Dorectory List</title></head>\r\n",
+                "<body><h1>File List</h1><ul>\r\n");
+            http_server_send(request->socket, msg, strlen(msg));
+            handle_directory(request);
+            snprintf(msg, 1024, "%s", "</ul></body></html>\r\n");
+            http_server_send(request->socket, msg, strlen(msg));
+        } else {
+            response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_DUMM
+                                  : HTTP_RESPONSE_200_DUMMY;
+            http_server_send(request->socket, response, strlen(response));
+            strcat(root, request->request_url);
+            if ((fp = filp_open(root, O_RDONLY, 0)) < 0)
+                printk("open fail");
+            if (fp) {
+                while ((len = kernel_read(fp, msg, 1023, &fp->f_pos)) > 0) {
+                    http_server_send(request->socket, msg, len);
+                }
+            }
+            
+            filp_close(fp, NULL);
+        }
+    }
     return 0;
 }
 
@@ -149,6 +224,7 @@ static void http_server_worker(struct work_struct *work)
     char *buf;
     // parse request and response
     struct http_parser parser;
+    /* parse packet */
     struct http_parser_settings setting = {
         .on_message_begin = http_parser_callback_message_begin,
         .on_url = http_parser_callback_request_url,
@@ -172,16 +248,22 @@ static void http_server_worker(struct work_struct *work)
     request.socket = socket;
     http_parser_init(&parser, HTTP_REQUEST);
     parser.data = &request;
-    while (!!daemon.is_stopped) {
+    while (!kthread_should_stop()) {
+        memset(buf, 0, RECV_BUFFER_SIZE);
         int ret = http_server_recv(socket, buf, RECV_BUFFER_SIZE - 1);
         if (ret <= 0) {
             if (ret)
                 pr_err("recv error: %d\n", ret);
             break;
+        } else {
+            printk("recv\n");
+            printk("%s\n", buf);
         }
         // prase request
         http_parser_execute(&parser, &setting, buf, ret);
-        if (request.complete && !http_should_keep_alive(&parser))
+        // if (request.complete && !http_should_keep_alive(&parser))
+        //     break;
+        if (request.complete)
             break;
     }
     kernel_sock_shutdown(socket, SHUT_RDWR);
