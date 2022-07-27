@@ -10,11 +10,12 @@ fi
 # load kHTTPd
 sudo rmmod -f khttpd 2>/dev/null
 sleep 1
-sudo insmod $KHTTPD_MOD
+sudo insmod $KHTTPD_MOD port=9090
 
 # run HTTP benchmarking
-./htstress -n 100000 -c 1 -t 4 http://localhost:8081/
+# ./htstress -n 100000 -c 1 -t 4 http://localhost:9090/
+# wget localhost:9090
 
 # epilogue
-sudo rmmod khttpd
-echo "Complete"
+# sudo rmmod khttpd
+# echo "Complete"
