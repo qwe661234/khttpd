@@ -46,6 +46,7 @@ struct http_request {
     struct socket *socket;
     enum http_method method;
     char request_url[128];
+    char request_data[4096];
     struct dir_context dir_context;
     int complete;
 };
@@ -129,9 +130,15 @@ static int http_server_response(struct http_request *request, int keep_alive)
     struct file *fp;
     int len;
     pr_info("requested_url = %s\n", request->request_url);
-    if (request->method != HTTP_GET)
-        response = keep_alive ? HTTP_RESPONSE_501_KEEPALIVE : HTTP_RESPONSE_501;
-    else {
+    if (request->method == HTTP_POST) {
+        strcat(root, request->request_url);
+        if ((fp = filp_open(root, O_RDWR | O_CREAT, 0777)) < 0)
+            printk("open fail");
+        kernel_write(fp, request->request_data, strlen(request->request_data),
+                     &fp->f_pos);
+        http_server_send(request->socket, "OK!", 4);
+        filp_close(fp, NULL);
+    } else if (request->method == HTTP_GET) {
         if (strcmp(request->request_url, "/") == 0 ||
             strcmp(request->request_url, "/index.html") == 0) {
             response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_D
@@ -157,9 +164,12 @@ static int http_server_response(struct http_request *request, int keep_alive)
                     http_server_send(request->socket, msg, len);
                 }
             }
-            
+
             filp_close(fp, NULL);
         }
+    } else {
+        response = keep_alive ? HTTP_RESPONSE_501_KEEPALIVE : HTTP_RESPONSE_501;
+        http_server_send(request->socket, response, strlen(response));
     }
     return 0;
 }
@@ -207,6 +217,8 @@ static int http_parser_callback_body(http_parser *parser,
                                      const char *p,
                                      size_t len)
 {
+    struct http_request *request = parser->data;
+    strncpy(request->request_data, p, len);
     return 0;
 }
 
