@@ -53,6 +53,9 @@ struct http_request {
 struct http_service daemon = {.is_stopped = false};
 extern struct workqueue_struct *khttpd_wq;
 
+struct http_service daemon = {.is_stopped = false};
+extern struct workqueue_struct *khttpd_wq;
+
 static int http_server_recv(struct socket *sock, char *buf, size_t size)
 {
     struct kvec iov = {.iov_base = (void *) buf, .iov_len = size};
@@ -260,7 +263,7 @@ static void http_server_worker(struct work_struct *work)
     request.socket = socket;
     http_parser_init(&parser, HTTP_REQUEST);
     parser.data = &request;
-    while (!kthread_should_stop()) {
+    while (!daemon.is_stopped) {
         memset(buf, 0, RECV_BUFFER_SIZE);
         int ret = http_server_recv(socket, buf, RECV_BUFFER_SIZE - 1);
         if (ret <= 0) {
@@ -279,8 +282,8 @@ static void http_server_worker(struct work_struct *work)
             break;
     }
     kernel_sock_shutdown(socket, SHUT_RDWR);
-    sock_release(socket);
     kfree(buf);
+    return;
 }
 
 static struct work_struct *create_work(struct socket *sk)
@@ -339,14 +342,12 @@ int http_server_daemon(void *arg)
             sock_release(socket);
             continue;
         }
-
-        /* start server worker */
         queue_work(khttpd_wq, work);
     }
-
     printk(KBUILD_MODNAME ": daemon shutdown in progress...\n");
 
     daemon.is_stopped = true;
     free_work();
+
     return 0;
 }

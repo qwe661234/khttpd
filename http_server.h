@@ -18,7 +18,6 @@ struct khttpd {
     struct list_head list;
     struct work_struct khttpd_work;
 };
-
 extern int http_server_daemon(void *arg);
 
 #endif
