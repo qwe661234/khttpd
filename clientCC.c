@@ -56,10 +56,10 @@ int main(int argc, char *argv[])
              "POST /%s HTTP/1.1\r\n"
              "Host: localhost:9090\r\n"
              "Content-Type: text/plain\r\n"
-             "Content-Length: %ld\r\n"
+             "Content-Length: %lu\r\n"
              "Connection: keep-alive\r\n\r\n"
              "%s",
-             argv[1], strlen(sendmsg), sendmsg);
+             argv[1], (unsigned long) strlen(sendmsg), sendmsg);
     send(sockfd, req, strlen(req), 0);
 
     while (recv(sockfd, recvmsg, 1024, 0))

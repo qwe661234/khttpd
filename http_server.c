@@ -53,9 +53,6 @@ struct http_request {
 struct http_service daemon = {.is_stopped = false};
 extern struct workqueue_struct *khttpd_wq;
 
-struct http_service daemon = {.is_stopped = false};
-extern struct workqueue_struct *khttpd_wq;
-
 static int http_server_recv(struct socket *sock, char *buf, size_t size)
 {
     struct kvec iov = {.iov_base = (void *) buf, .iov_len = size};
@@ -135,7 +132,7 @@ static int http_server_response(struct http_request *request, int keep_alive)
     pr_info("requested_url = %s\n", request->request_url);
     if (request->method == HTTP_POST) {
         strcat(root, request->request_url);
-        if ((fp = filp_open(root, O_RDWR | O_CREAT, 0777)) < 0)
+        if ((fp = filp_open(root, O_RDWR | O_CREAT, 0777)))
             printk("open fail");
         kernel_write(fp, request->request_data, strlen(request->request_data),
                      &fp->f_pos);
@@ -160,7 +157,7 @@ static int http_server_response(struct http_request *request, int keep_alive)
                                   : HTTP_RESPONSE_200_DUMMY;
             http_server_send(request->socket, response, strlen(response));
             strcat(root, request->request_url);
-            if ((fp = filp_open(root, O_RDONLY, 0)) < 0)
+            if ((fp = filp_open(root, O_RDONLY, 0)))
                 printk("open fail");
             if (fp) {
                 while ((len = kernel_read(fp, msg, 1023, &fp->f_pos)) > 0) {
