@@ -4,12 +4,12 @@
 #include <string.h>
 #include <sys/socket.h>
 #define MAX 80
-#define PORT 9090
+#define PORT 8081
 #define CRLF "\r\n"
 #define HTTP_REQ                                              \
     "POST /c.txt HTTP/1.1" CRLF "Host: localhost:9090" CRLF   \
     "Content-Type: text/plain" CRLF "Content-Length: 12" CRLF \
-    "Connection: keep-alive" CRLF CRLF "Add new file!!"
+    "Connection: Keep-Alive" CRLF CRLF "Add new file!!"
 
 
 int main(int argc, char *argv[])
@@ -54,10 +54,10 @@ int main(int argc, char *argv[])
     char req[4096];
     snprintf(req, 4096,
              "POST /%s HTTP/1.1\r\n"
-             "Host: localhost:9090\r\n"
+             "Host: localhost:8081\r\n"
              "Content-Type: text/plain\r\n"
              "Content-Length: %lu\r\n"
-             "Connection: keep-alive\r\n\r\n"
+             "Connection: Keep-Alive\r\n\r\n"
              "%s",
              argv[1], (unsigned long) strlen(sendmsg), sendmsg);
     send(sockfd, req, strlen(req), 0);

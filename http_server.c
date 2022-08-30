@@ -30,12 +30,12 @@
     ""                                                                 \
     "HTTP/1.1 501 Not Implemented" CRLF "Server: " KBUILD_MODNAME CRLF \
     "Content-Type: text/plain" CRLF "Content-Length: 21" CRLF          \
-    "Connection: KeepAlive" CRLF CRLF "501 Not Implemented" CRLF
-#define HTTP_RESPONSE_200_KEEPALIVE_D                     \
+    "Connection: Keep-Alive" CRLF CRLF "501 Not Implemented" CRLF
+#define HTTP_RESPONSE_200_KEEPALIVE_READDIR               \
     ""                                                    \
     "HTTP/1.1 200 OK" CRLF "Server: " KBUILD_MODNAME CRLF \
     "Content-Type: text/html" CRLF "Connection: Keep-Alive" CRLF CRLF
-#define HTTP_RESPONSE_200_KEEPALIVE_DUMM                  \
+#define HTTP_RESPONSE_200_KEEPALIVE_READFILE              \
     ""                                                    \
     "HTTP/1.1 200 OK" CRLF "Server: " KBUILD_MODNAME CRLF \
     "Connection: Keep-Alive" CRLF CRLF
@@ -109,7 +109,7 @@ static bool handle_directory(struct http_request *request)
     struct file *fp;
     request->dir_context.actor = tracedir;
 
-    fp = filp_open("/home/qwe661234/jservHW/NetWork/khttpd/resources/",
+    fp = filp_open("/home/qwe661234/jservHW/khttpd/resources/",
                    O_RDONLY | O_DIRECTORY, 0);
 
     if (IS_ERR(fp)) {
@@ -125,23 +125,25 @@ static bool handle_directory(struct http_request *request)
 static int http_server_response(struct http_request *request, int keep_alive)
 {
     char *response;
-    char msg[1024],
-        root[1024] = "/home/qwe661234/jservHW/NetWork/khttpd/resources";
+    char msg[1024], root[1024] = "/home/qwe661234/jservHW/khttpd/resources";
     struct file *fp;
     int len;
-    pr_info("requested_url = %s\n", request->request_url);
     if (request->method == HTTP_POST) {
         strcat(root, request->request_url);
-        if ((fp = filp_open(root, O_RDWR | O_CREAT, 0777)))
+        if (IS_ERR(fp = filp_open(root, O_RDWR | O_CREAT, 0777))) {
             printk("open fail");
+            return -1;
+        }
         kernel_write(fp, request->request_data, strlen(request->request_data),
                      &fp->f_pos);
         http_server_send(request->socket, "OK!", 4);
         filp_close(fp, NULL);
     } else if (request->method == HTTP_GET) {
+        if (strcmp(request->request_url, "/favicon.ico") == 0)
+            return 0;
         if (strcmp(request->request_url, "/") == 0 ||
             strcmp(request->request_url, "/index.html") == 0) {
-            response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_D
+            response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_READDIR
                                   : HTTP_RESPONSE_200_DUMMY;
             http_server_send(request->socket, response, strlen(response));
             snprintf(
@@ -153,18 +155,20 @@ static int http_server_response(struct http_request *request, int keep_alive)
             snprintf(msg, 1024, "%s", "</ul></body></html>\r\n");
             http_server_send(request->socket, msg, strlen(msg));
         } else {
-            response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_DUMM
+            response = keep_alive ? HTTP_RESPONSE_200_KEEPALIVE_READFILE
                                   : HTTP_RESPONSE_200_DUMMY;
             http_server_send(request->socket, response, strlen(response));
             strcat(root, request->request_url);
-            if ((fp = filp_open(root, O_RDONLY, 0)))
+            printk("file path = %s\n", root);
+            if (IS_ERR(fp = filp_open(root, O_RDWR | O_CREAT, 0777))) {
                 printk("open fail");
+                return -1;
+            }
             if (fp) {
                 while ((len = kernel_read(fp, msg, 1023, &fp->f_pos)) > 0) {
                     http_server_send(request->socket, msg, len);
                 }
             }
-
             filp_close(fp, NULL);
         }
     } else {
@@ -269,7 +273,7 @@ static void http_server_worker(struct work_struct *work)
             break;
         } else {
             printk("recv\n");
-            printk("%s\n", buf);
+            // printk("%s\n", buf);
         }
         // prase request
         http_parser_execute(&parser, &setting, buf, ret);
